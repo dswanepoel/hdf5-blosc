@@ -24,7 +24,7 @@ ExternalProject_Add(blosc
 
 
 # sources
-set(SOURCES src/blosc_filter.c)
+set(SOURCES src/blosc_filter.c src/blosc_plugin.c)
 
 # dependencies
 if(MSVC)
