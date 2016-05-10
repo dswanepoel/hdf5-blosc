@@ -241,16 +241,16 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
             goto failed;
         }
 
-#if ( (BLOSC_VERSION_MAJOR <= 1) && (BLOSC_VERSION_MINOR < 5) )
         status = blosc_compress(clevel, doshuffle, typesize, nbytes,
                                 *buf, outbuf, nbytes);
+#if ( (BLOSC_VERSION_MAJOR <= 1) && (BLOSC_VERSION_MINOR < 5) )
 #else
         /* Starting from Blosc 1.5 on, there is not an internal global
 	   lock anymore, so do not try to run in multithreading mode
 	   so as to not interfering with other possible threads
 	   launched by the main Python application */
-        status = blosc_compress_ctx(clevel, doshuffle, typesize, nbytes,
-                                    *buf, outbuf, nbytes, compname, 0, 1);
+//        status = blosc_compress_ctx(clevel, doshuffle, typesize, nbytes,
+//                                    *buf, outbuf, nbytes, compname, 0, 1);
 #endif
         if (status < 0) {
           PUSH_ERR("blosc_filter", H5E_CALLBACK, "Blosc compression error");
@@ -267,6 +267,8 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
 #endif
 
         free(outbuf);
+        
+        blosc_init();
 
         /* Extract the exact outbuf_size from the buffer header.
          *
@@ -284,14 +286,14 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
           goto failed;
         }
 
-#if ( (BLOSC_VERSION_MAJOR <= 1) && (BLOSC_VERSION_MINOR < 5) )
 	status = blosc_decompress(*buf, outbuf, outbuf_size);
+#if ( (BLOSC_VERSION_MAJOR <= 1) && (BLOSC_VERSION_MINOR < 5) )
 #else
         /* Starting from Blosc 1.5 on, there is not an internal global
 	   lock anymore, so do not try to run in multithreading mode
 	   so as to not interfering with other possible threads
 	   launched by the main Python application */
-        status = blosc_decompress_ctx(*buf, outbuf, outbuf_size, 1);
+//        status = blosc_decompress_ctx(*buf, outbuf, outbuf_size, 1);
 #endif
 
         if(status <= 0){    /* decompression failed */
