@@ -111,9 +111,13 @@ herr_t blosc_set_local(hid_t dcpl, hid_t type, hid_t space){
     hsize_t chunkdims[32];
     unsigned int flags;
     size_t nelements = 8;
-    unsigned int values[] = {0,0,0,0,0,0,0,0};
+    unsigned int values[] = {0,0,0,0,0,0,0,0,0};
     hid_t super_type;
     H5T_class_t classt;
+    int code;
+    char *compname = "blosclz";    /* The compressor by default */
+    char *complist;
+    int threads = 8;
 
     r = GET_FILTER(dcpl, FILTER_BLOSC, &flags, &nelements, values, 0, NULL);
     if(r<0) return -1;
@@ -166,6 +170,30 @@ herr_t blosc_set_local(hid_t dcpl, hid_t type, hid_t space){
     r = H5Pmodify_filter(dcpl, FILTER_BLOSC, flags, nelements, values);
     if(r<0) return -1;
 
+    if (nelements >= 8)
+        threads = values[7];
+    blosc_init();
+    blosc_set_nthreads(threads);
+
+    /* Check that we actually have support for the compressor code */
+    code = blosc_compcode_to_compname(values[6], &compname);
+    if (code == -1) {
+        complist = blosc_list_compressors();
+#if H5Epush_vers == 2
+        PUSH_ERR("blosc_filter", H5E_CALLBACK,
+                 "this Blosc library does not have support for "
+                 "the '%s' compressor, but only for: %s",
+                 compname, complist);
+#else
+        sprintf(errmsg, "this Blosc library does not have support for "
+                "the '%s' compressor, but only for: %s",
+                compname, complist);
+        PUSH_ERR("blosc_filter", H5E_CALLBACK, errmsg);
+        return -1;
+#endif
+    }
+    blosc_set_compressor(compname);
+
     return 1;
 }
 
@@ -181,10 +209,7 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
     size_t outbuf_size;
     int clevel = 5;                /* Compression level default */
     int doshuffle = 1;             /* Shuffle default */
-    int compcode;                  /* Blosc compressor */
-    int code;
-    char *compname = "blosclz";    /* The compressor by default */
-    char *complist;
+    int threads = 0;
     char errmsg[256];
 
     /* Filter params that are always set */
@@ -197,25 +222,16 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
     if (cd_nelmts >= 6) {
         doshuffle = cd_values[5];     /* Shuffle? */
     }
-    if (cd_nelmts >= 7) {
-        compcode = cd_values[6];     /* The Blosc compressor used */
-	/* Check that we actually have support for the compressor code */
-        complist = blosc_list_compressors();
-	code = blosc_compcode_to_compname(compcode, &compname);
-	if (code == -1) {
-#if H5Epush_vers == 2
-            PUSH_ERR("blosc_filter", H5E_CALLBACK,
-                     "this Blosc library does not have support for "
-                     "the '%s' compressor, but only for: %s",
-                     compname, complist);
-#else
-	    sprintf(errmsg, "this Blosc library does not have support for "
-                    "the '%s' compressor, but only for: %s",
-		    compname, complist);
-            PUSH_ERR("blosc_filter", H5E_CALLBACK, errmsg);
-            goto failed;
-#endif
-	}
+    if (cd_nelmts >= 8 && !(flags & H5Z_FLAG_REVERSE)) {
+        threads = cd_values[7];
+    } else {
+        char* envvar = getenv("HDF_FILTER_THREADS");
+        if (envvar != NULL) {
+            threads = atoi(envvar);
+        }
+    }
+    if (threads <= 0) {
+        threads = 8;
     }
 
     /* We're compressing */
@@ -269,6 +285,7 @@ size_t blosc_filter(unsigned flags, size_t cd_nelmts,
         free(outbuf);
         
         blosc_init();
+        blosc_set_nthreads(threads);
 
         /* Extract the exact outbuf_size from the buffer header.
          *
